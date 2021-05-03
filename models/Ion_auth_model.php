@@ -280,7 +280,7 @@ class Ion_auth_model extends CI_Model
 	 * Hashes the password to be stored in the database.
 	 *
 	 * @param string $password
-	 * @param string $identity
+	 * @param string Deprecated, identity is no longer used when hashing passwords
 	 *
 	 * @return false|string
 	 * @author Mathew
@@ -297,11 +297,15 @@ class Ion_auth_model extends CI_Model
 		}
 
 		$algo = $this->_get_hash_algo();
-		$params = $this->_get_hash_parameters($identity);
+		$params = $this->_get_hash_parameters();
 
 		if ($algo !== FALSE && $params !== FALSE)
 		{
-			return password_hash($password, $algo, $params);
+			$hash = password_hash($password, $algo, $params);
+			if (is_null($hash) || $hash === FALSE) {
+				return FALSE;
+			}
+			return $hash;
 		}
 
 		return FALSE;
@@ -353,7 +357,7 @@ class Ion_auth_model extends CI_Model
 	public function rehash_password_if_needed($hash, $identity, $password)
 	{
 		$algo = $this->_get_hash_algo();
-		$params = $this->_get_hash_parameters($identity);
+		$params = $this->_get_hash_parameters();
 
 		if ($algo !== FALSE && $params !== FALSE)
 		{
@@ -861,6 +865,10 @@ class Ion_auth_model extends CI_Model
 		$this->db->insert($this->tables['users'], $user_data);
 
 		$id = $this->db->insert_id($this->tables['users'] . '_id_seq');
+
+		if(!$id) {
+			return FALSE;
+		}
 
 		// add in groups array if it doesn't exists and stop adding into default group if default group ids are set
 		if (isset($default_group->id) && empty($groups))
@@ -1802,6 +1810,7 @@ class Ion_auth_model extends CI_Model
 			{
 				if( ! empty($data['password']))
 				{
+					$user = $this->user($id)->row();
 					$data['password'] = $this->hash_password($data['password'], $user->{$this->identity_column});
 					if ($data['password'] === FALSE)
 					{
@@ -1821,7 +1830,7 @@ class Ion_auth_model extends CI_Model
 		}
 
 		$this->trigger_events('extra_where');
-		$this->db->update($this->tables['users'], $data, ['id' => $user->id]);
+		$this->db->update($this->tables['users'], $data, ['id' => $id]);
 
 		if ($this->db->trans_status() === FALSE)
 		{
@@ -2002,7 +2011,8 @@ class Ion_auth_model extends CI_Model
 				set_cookie([
 					'name'   => $this->config->item('remember_cookie_name', 'ion_auth'),
 					'value'  => $token->user_code,
-					'expire' => $expire
+					'expire' => $expire,
+					'httponly' => TRUE,
 				]);
 
 				$this->trigger_events(['post_remember_user', 'remember_user_successful']);
@@ -2595,38 +2605,26 @@ class Ion_auth_model extends CI_Model
 
 	/** Retrieve hash parameter according to options
 	 *
-	 * @param string	$identity
+	 * @param string Deprecated, identity is no longer used when hashing passwords
 	 *
 	 * @return array|bool
 	 */
 	protected function _get_hash_parameters($identity = NULL)
 	{
-		// Check if user is administrator or not
-		$is_admin = FALSE;
-		if ($identity)
-		{
-			$user_id = $this->get_user_id_from_identity($identity);
-			if ($user_id && $this->in_group($this->config->item('admin_group', 'ion_auth'), $user_id))
-			{
-				$is_admin = TRUE;
-			}
-		}
-
 		$params = FALSE;
 		switch ($this->hash_method)
 		{
 			case 'bcrypt':
 				$params = [
-					'cost' => $is_admin ? $this->config->item('bcrypt_admin_cost', 'ion_auth')
-										: $this->config->item('bcrypt_default_cost', 'ion_auth')
+					'cost' => $this->config->item('bcrypt_default_cost', 'ion_auth')
 				];
 				break;
 
 			case 'argon2':
-				$params = $is_admin ? $this->config->item('argon2_admin_params', 'ion_auth')
-									: $this->config->item('argon2_default_params', 'ion_auth');
+			case 'argon2id':
+				$params = $this->config->item('argon2_default_params', 'ion_auth');
 				break;
-
+				
 			default:
 				// Do nothing
 		}
@@ -2649,6 +2647,10 @@ class Ion_auth_model extends CI_Model
 
 			case 'argon2':
 				$algo = PASSWORD_ARGON2I;
+				break;
+
+			case 'argon2id':
+				$algo = PASSWORD_ARGON2ID;
 				break;
 
 			default:
