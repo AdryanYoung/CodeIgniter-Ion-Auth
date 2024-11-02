@@ -161,23 +161,23 @@ class IonAuthModel
 	/**
 	 * Message (uses lang file)
 	 *
-	 * @var string
+	 * @var array
 	 */
 	protected $messages = [];
 
 	/**
 	 * Error message (uses lang file)
 	 *
-	 * @var string
+	 * @var array
 	 */
 	protected $errors = [];
 
 	/**
-	 * Message templates (single, list).
+	 * Messages templates (single, list).
 	 *
 	 * @var array
 	 */
-	protected $messageTemplates = [];
+	protected $messagesTemplates = [];
 
 	/**
 	 * Caching of users and their groups
@@ -199,6 +199,20 @@ class IonAuthModel
 	 * @var \CodeIgniter\Database\BaseConnection
 	 */
 	protected $db;
+
+	/**
+	 * Table joins
+	 *
+	 * @var array
+	 */
+	protected $join;
+
+	/**
+	 * Hash method
+	 *
+	 * @var string
+	 */
+	protected $hashMethod;
 
 	/**
 	 * Constructor
