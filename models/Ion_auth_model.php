@@ -45,28 +45,35 @@ class Ion_auth_model extends CI_Model
 	public $tables = [];
 
 	/**
+	 * Holds an array of joins used
+	 *
+	 * @var array
+	 */
+	public $join = [];
+
+	/**
 	 * activation code
-	 * 
+	 *
 	 * Set by deactivate() function
-	 * Also set on register() function, if email_activation 
+	 * Also set on register() function, if email_activation
 	 * option is activated
-	 * 
-	 * This is the value devs should give to the user 
+	 *
+	 * This is the value devs should give to the user
 	 * (in an email, usually)
-	 * 
+	 *
 	 * It contains the *user* version of the activation code
-	 * It's a value of the form "selector.validator" 
-	 * 
+	 * It's a value of the form "selector.validator"
+	 *
 	 * This is not the same activation_code as the one in DB.
 	 * The DB contains a *hashed* version of the validator
 	 * and a selector in another column.
-	 * 
+	 *
 	 * THe selector is not private, and only used to lookup
 	 * the validator.
-	 * 
+	 *
 	 * The validator is private, and to be only known by the user
 	 * So in case of DB leak, nothing could be actually used.
-	 * 
+	 *
 	 * @var string
 	 */
 	public $activation_code;
@@ -84,6 +91,34 @@ class Ion_auth_model extends CI_Model
 	 * @var string
 	 */
 	public $identity;
+
+	/**
+	 * Identity column
+	 *
+	 * @var string
+	 */
+	public $identity_column;
+
+	/**
+	 * Message start delimiter
+	 *
+	 * @var string
+	 */
+	public $message_start_delimiter ;
+
+	/**
+	 * Message end delimiter
+	 *
+	 * @var string
+	 */
+	public $message_end_delimiter ;
+
+	/**
+	 * Hash method
+	 *
+	 * @var string
+	 */
+	public $hash_method;
 
 	/**
 	 * Where
@@ -205,7 +240,7 @@ class Ion_auth_model extends CI_Model
 
 		// initialize the database
 		$group_name = $this->config->item('database_group_name', 'ion_auth');
-		if (empty($group_name)) 
+		if (empty($group_name))
 		{
 			// By default, use CI's db that should be already loaded
 			$CI =& get_instance();
@@ -215,7 +250,7 @@ class Ion_auth_model extends CI_Model
 		{
 			// For specific group name, open a new specific connection
 			$this->db = $this->load->database($group_name, TRUE, TRUE);
-		}   
+		}
 
 		// initialize db tables data
 		$this->tables = $this->config->item('tables', 'ion_auth');
@@ -280,7 +315,7 @@ class Ion_auth_model extends CI_Model
 	 * Hashes the password to be stored in the database.
 	 *
 	 * @param string $password
-	 * @param string $identity
+	 * @param string Deprecated, identity is no longer used when hashing passwords
 	 *
 	 * @return false|string
 	 * @author Mathew
@@ -297,11 +332,15 @@ class Ion_auth_model extends CI_Model
 		}
 
 		$algo = $this->_get_hash_algo();
-		$params = $this->_get_hash_parameters($identity);
+		$params = $this->_get_hash_parameters();
 
 		if ($algo !== FALSE && $params !== FALSE)
 		{
-			return password_hash($password, $algo, $params);
+			$hash = password_hash($password, $algo, $params);
+			if (is_null($hash) || $hash === FALSE) {
+				return FALSE;
+			}
+			return $hash;
 		}
 
 		return FALSE;
@@ -353,7 +392,7 @@ class Ion_auth_model extends CI_Model
 	public function rehash_password_if_needed($hash, $identity, $password)
 	{
 		$algo = $this->_get_hash_algo();
-		$params = $this->_get_hash_parameters($identity);
+		$params = $this->_get_hash_parameters();
 
 		if ($algo !== FALSE && $params !== FALSE)
 		{
@@ -374,7 +413,7 @@ class Ion_auth_model extends CI_Model
 	/**
 	 * Get a user by its activation code
 	 *
-	 * @param bool       $user_code	the activation code 
+	 * @param bool       $user_code	the activation code
 	 * 								It's the *user* one, containing "selector.validator"
 	 * 								the one you got in activation_code member
 	 *
@@ -386,7 +425,7 @@ class Ion_auth_model extends CI_Model
 		// Retrieve the token object from the code
 		$token = $this->_retrieve_selector_validator_couple($user_code);
 
-		if ($token) 
+		if ($token)
 		{
 			// Retrieve the user according to this selector
 			$user = $this->where('activation_selector', $token->selector)->users()->row();
@@ -408,7 +447,7 @@ class Ion_auth_model extends CI_Model
 	 * Validates and removes activation code.
 	 *
 	 * @param int|string $id		the user identifier
-	 * @param bool       $code		the *user* activation code 
+	 * @param bool       $code		the *user* activation code
 	 * 								if omitted, simply activate the user without check
 	 *
 	 * @return bool
@@ -862,6 +901,10 @@ class Ion_auth_model extends CI_Model
 
 		$id = $this->db->insert_id($this->tables['users'] . '_id_seq');
 
+		if(!$id) {
+			return FALSE;
+		}
+
 		// add in groups array if it doesn't exists and stop adding into default group if default group ids are set
 		if (isset($default_group->id) && empty($groups))
 		{
@@ -953,7 +996,7 @@ class Ion_auth_model extends CI_Model
 						$this->clear_remember_code($identity);
 					}
 				}
-				
+
 				// Rehash if needed
 				$this->rehash_password_if_needed($user->password, $identity, $password);
 
@@ -1802,6 +1845,7 @@ class Ion_auth_model extends CI_Model
 			{
 				if( ! empty($data['password']))
 				{
+					$user = $this->user($id)->row();
 					$data['password'] = $this->hash_password($data['password'], $user->{$this->identity_column});
 					if ($data['password'] === FALSE)
 					{
@@ -1821,7 +1865,7 @@ class Ion_auth_model extends CI_Model
 		}
 
 		$this->trigger_events('extra_where');
-		$this->db->update($this->tables['users'], $data, ['id' => $user->id]);
+		$this->db->update($this->tables['users'], $data, ['id' => $id]);
 
 		if ($this->db->trans_status() === FALSE)
 		{
@@ -2002,7 +2046,8 @@ class Ion_auth_model extends CI_Model
 				set_cookie([
 					'name'   => $this->config->item('remember_cookie_name', 'ion_auth'),
 					'value'  => $token->user_code,
-					'expire' => $expire
+					'expire' => $expire,
+					'httponly' => TRUE,
 				]);
 
 				$this->trigger_events(['post_remember_user', 'remember_user_successful']);
@@ -2595,36 +2640,24 @@ class Ion_auth_model extends CI_Model
 
 	/** Retrieve hash parameter according to options
 	 *
-	 * @param string	$identity
+	 * @param string Deprecated, identity is no longer used when hashing passwords
 	 *
 	 * @return array|bool
 	 */
 	protected function _get_hash_parameters($identity = NULL)
 	{
-		// Check if user is administrator or not
-		$is_admin = FALSE;
-		if ($identity)
-		{
-			$user_id = $this->get_user_id_from_identity($identity);
-			if ($user_id && $this->in_group($this->config->item('admin_group', 'ion_auth'), $user_id))
-			{
-				$is_admin = TRUE;
-			}
-		}
-
 		$params = FALSE;
 		switch ($this->hash_method)
 		{
 			case 'bcrypt':
 				$params = [
-					'cost' => $is_admin ? $this->config->item('bcrypt_admin_cost', 'ion_auth')
-										: $this->config->item('bcrypt_default_cost', 'ion_auth')
+					'cost' => $this->config->item('bcrypt_default_cost', 'ion_auth')
 				];
 				break;
 
 			case 'argon2':
-				$params = $is_admin ? $this->config->item('argon2_admin_params', 'ion_auth')
-									: $this->config->item('argon2_default_params', 'ion_auth');
+			case 'argon2id':
+				$params = $this->config->item('argon2_default_params', 'ion_auth');
 				break;
 
 			default:
@@ -2649,6 +2682,10 @@ class Ion_auth_model extends CI_Model
 
 			case 'argon2':
 				$algo = PASSWORD_ARGON2I;
+				break;
+
+			case 'argon2id':
+				$algo = PASSWORD_ARGON2ID;
 				break;
 
 			default:
@@ -2774,7 +2811,7 @@ class Ion_auth_model extends CI_Model
 		}
 
 		// Now we can compare them
-		if($hashed_password === $hashed_password_db)
+		if(hash_equals($hashed_password, $hashed_password_db))
 		{
 			// Password is good, migrate it to latest
 			$result = $this->_set_password_db($identity, $password);
